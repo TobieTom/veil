@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# tool/skill scratch output (design-review etc. write here; keepers go in docs/)
+.jez/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

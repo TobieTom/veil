@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { UserPlus } from "lucide-react";
+import { UserPlus, ArrowUpRight } from "lucide-react";
 import { revealItem } from "@/components/dashboard/reveal";
 import { MemberAvatar } from "@/components/roster/member-avatar";
 import { RosterStatusBadge } from "@/components/roster/status-badge";
@@ -16,9 +16,11 @@ import type { RosterMember } from "@/lib/mock-data";
 export function RosterList({
   members,
   onAddClick,
+  onPay,
 }: {
   members: RosterMember[];
   onAddClick: () => void;
+  onPay: (member: RosterMember) => void;
 }) {
   if (members.length === 0) {
     return (
@@ -54,7 +56,7 @@ export function RosterList({
     >
       <div
         role="row"
-        className="grid grid-cols-[1fr_auto] gap-4 border-b border-border bg-muted/30 px-4 py-2.5 text-xs font-medium text-muted-foreground sm:grid-cols-[2fr_1fr_auto]"
+        className="grid grid-cols-[1fr_auto] gap-4 border-b border-border bg-muted/30 px-4 py-2.5 text-xs font-medium text-muted-foreground sm:grid-cols-[2fr_1fr_auto_auto]"
       >
         <span role="columnheader">Member</span>
         <span role="columnheader" className="hidden sm:block">
@@ -62,6 +64,9 @@ export function RosterList({
         </span>
         <span role="columnheader" className="text-right sm:text-left">
           Status
+        </span>
+        <span role="columnheader" className="sr-only">
+          Actions
         </span>
       </div>
 
@@ -76,7 +81,7 @@ export function RosterList({
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             role="row"
             className={cn(
-              "grid grid-cols-[1fr_auto] items-center gap-4 border-b border-border px-4 py-3 last:border-b-0 sm:grid-cols-[2fr_1fr_auto]",
+              "group grid grid-cols-[1fr_auto] items-center gap-4 border-b border-border px-4 py-3 last:border-b-0 sm:grid-cols-[2fr_1fr_auto_auto]",
               "hover:bg-accent/20 transition-colors",
             )}
           >
@@ -104,6 +109,26 @@ export function RosterList({
 
             <div role="cell" className="flex justify-end sm:justify-start">
               <RosterStatusBadge status={member.status} />
+            </div>
+
+            {/* Contextual "Pay" — calm at rest, present on row hover/focus.
+                Always reachable by keyboard (focus-within reveals it); it just
+                doesn't shout on every row. Opens the proposal form pre-filled
+                with this member. */}
+            <div role="cell" className="flex justify-end">
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => onPay(member)}
+                aria-label={`Propose a payout to ${member.name}`}
+                className={cn(
+                  "opacity-0 transition-opacity",
+                  "group-hover:opacity-100 focus-visible:opacity-100",
+                )}
+              >
+                <ArrowUpRight className="size-3" aria-hidden />
+                Pay
+              </Button>
             </div>
           </motion.div>
         ))}

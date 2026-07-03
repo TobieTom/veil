@@ -3,13 +3,33 @@
 import { Wallet, ArrowDownRight, ArrowUpRight, Activity } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { mockTreasuryAccount } from "@/lib/mock-data";
+import { useProposals } from "@/lib/proposal-store";
+import {
+  currentBalance,
+  executedProposals,
+  formatAmount,
+  totalOutflow,
+} from "@/lib/treasury";
 import { CountUp } from "@/components/dashboard/count-up";
 import { StatIcon } from "@/components/dashboard/stat-icon";
+import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { RevealGroup, revealItem } from "@/components/dashboard/reveal";
 import { motion } from "motion/react";
 
 export default function DashboardPage() {
   const account = mockTreasuryAccount;
+
+  // Same store, same access pattern as the Approvals queue. Everything below is
+  // derived from this snapshot — no independent Dashboard mock state.
+  const proposals = useProposals();
+
+  const balance = currentBalance(proposals);
+  const outflow = totalOutflow(proposals);
+  // No inflow concept exists in the proposal model (proposals are payouts, i.e.
+  // outflows only), so there is nothing honest to derive here yet — it stays 0
+  // rather than inventing deposits the store doesn't contain.
+  const inflow = 0;
+  const executed = executedProposals(proposals);
 
   return (
     <div className="bg-mesh min-h-full">
@@ -32,7 +52,7 @@ export default function DashboardPage() {
           </div>
           <div className="mt-3 flex items-baseline gap-3">
             <CountUp
-              value={account.balanceDisplay}
+              value={formatAmount(balance)}
               className="font-heading text-figure text-6xl font-semibold leading-none tracking-tight text-foreground sm:text-7xl"
             />
             <span className="text-xl font-medium text-muted-foreground">
@@ -53,7 +73,7 @@ export default function DashboardPage() {
                 Inflow (30d)
               </div>
               <div className="text-figure text-lg font-semibold text-positive">
-                +0.00{" "}
+                +{formatAmount(inflow)}{" "}
                 <span className="text-xs font-normal text-muted-foreground">
                   {account.balanceUnit}
                 </span>
@@ -68,7 +88,7 @@ export default function DashboardPage() {
                 Outflow (30d)
               </div>
               <div className="text-figure text-lg font-semibold text-negative">
-                &minus;0.00{" "}
+                &minus;{formatAmount(outflow)}{" "}
                 <span className="text-xs font-normal text-muted-foreground">
                   {account.balanceUnit}
                 </span>
@@ -83,18 +103,15 @@ export default function DashboardPage() {
               <CardTitle className="flex items-center gap-2">
                 <Activity className="size-4 text-muted-foreground" aria-hidden />
                 Recent activity
+                {executed.length > 0 && (
+                  <span className="text-figure text-xs font-normal text-muted-foreground/60">
+                    {executed.length}
+                  </span>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-                <p className="text-sm font-medium text-foreground">
-                  No activity yet
-                </p>
-                <p className="max-w-sm text-sm text-muted-foreground">
-                  Payouts and deposits for {account.name} will appear here
-                  once the treasury account is connected.
-                </p>
-              </div>
+              <ActivityFeed executed={executed} />
             </CardContent>
           </Card>
         </motion.div>
