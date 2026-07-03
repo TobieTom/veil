@@ -54,6 +54,8 @@ WASM-compiled web client.
   (Private State Manager) endpoint to coordinate proposals and threshold
   signatures among cosigners. Note: the SDK's own config key for this endpoint
   is `guardianEndpoint` (NOT `psmEndpoint`) — see the endpoint block below.
+  Source moved: it now lives in `github.com/OpenZeppelin/guardian` (the renamed
+  PSM repo) at `packages/miden-multisig-client`. npm package name + v0.15.0 unchanged.
 - (Optional, only if we need external ECDSA wallet support) `@getpara/react-sdk-lite`
 
 ## Private Multisig / PSM / Guardian — the foundation Veil is built on
@@ -81,6 +83,29 @@ OpenZeppelin's own audit flagged missing client-side validation of PSM-provided
 data as a real risk area, so our client code should not blindly trust PSM
 responses.
 
+**SECURITY — required check when wiring real signing (not optional hardening):**
+Guardian is a *coordination cache, not a ledger* (its own CONCEPTS.md). A
+substituted/malicious Guardian can ACK deltas with its *own* key if the client
+doesn't pin the right one. The audit-flagged gap: **Guardian `/pubkey` responses
+must be cross-checked against the expected/on-chain commitment — this is not
+done for you by default and must be treated as required.** The repo's client
+verification checklist (docs/CONCEPTS.md), which our real integration MUST satisfy:
+  1. Pin Guardian's `/pubkey` (fetched once over a trusted channel); refuse any
+     Guardian returning a different key.
+  2. Verify the ACK signature on every accepted delta.
+  3. Validate the commitment chain (`delta_n.new_commitment` ==
+     `delta_{n+1}.prev_commitment`).
+  4. Check freshness against Miden before signing high-value txns — match the
+     latest canonical commitment against the account's *on-chain* commitment.
+  5. Treat unexpected pubkey changes as a security event; halt until confirmed
+     intentional rotation.
+The repo *claims* the TS/Rust SDKs do 1–4 automatically and that #5 is
+application-level (ours). **Do NOT take that claim on faith** — verify against
+the actually-installed `@openzeppelin/miden-multisig-client` version that it
+performs the `/pubkey`↔on-chain-commitment check, since the audit specifically
+flagged this as historically missing. If it doesn't, we implement 1–4 ourselves.
+We own #5 regardless.
+
 The signing flow: propose → cosigners sign → threshold met → anyone can execute
 on-chain → all signers sync.
 
@@ -101,16 +126,54 @@ For Veil's MVP, we do NOT need the optional Rust coordinator server — build
 directly against MidenClient + MultisigClient talking to devnet endpoints. Add
 the coordinator later only if we need a centralized audit trail.
 
-Known working devnet/staging endpoints (verify these are still live before use —
-devnet endpoints rotate):
+Endpoints:
 ```
-NEXT_PUBLIC_PSM_ENDPOINT=https://psm-stg.openzeppelin.com
-NEXT_PUBLIC_MIDEN_RPC_URL=https://rpc.devnet.miden.io
+NEXT_PUBLIC_MIDEN_RPC_URL=https://rpc.devnet.miden.io   # devnet RPC — verified live
+NEXT_PUBLIC_PSM_ENDPOINT=http://localhost:3000          # self-hosted Guardian (see below)
 ```
 Keep the `NEXT_PUBLIC_PSM_ENDPOINT` env var name for continuity, but note that
 the SDK's internal config key for this endpoint is `guardianEndpoint` (passed to
 `new MultisigClient(midenClient, { guardianEndpoint, midenRpcEndpoint })`) — not
 `psmEndpoint`. Map the env var onto `guardianEndpoint` when constructing the client.
+
+### Self-hosting Guardian locally (verified working 2026-07-03)
+
+The hosted staging endpoint `psm-stg.openzeppelin.com` was down for days, so we
+self-host. **The repo has been RENAMED: `OpenZeppelin/private-state-manager` →
+`github.com/OpenZeppelin/guardian`** (a Rust monorepo; the old URL 301-redirects).
+The `@openzeppelin/miden-multisig-client` npm package (still v0.15.0, still valid)
+now lives in that monorepo at `packages/miden-multisig-client`.
+
+Self-hosting is well-documented and confirmed working — the repo's own QUICKSTART:
+```bash
+git clone https://github.com/OpenZeppelin/guardian.git && cd guardian
+docker compose up --build -d        # filesystem backend, no Postgres / .env needed
+# HTTP :3000, gRPC :50051
+curl http://localhost:3000/          # -> 200 "Hello, World!"  (liveness)
+curl http://localhost:3000/pubkey    # -> { "commitment": "0x..." }  (ACK key to pin)
+```
+Caveats learned doing this here (2026-07-03):
+- It's a **full-source Rust release build** (~20 min cold for the server crate,
+  workspace toolchain 1.93.0). Cold, not hard — the compile "just works", it's
+  only slow. Docker layer cache makes re-runs cheap.
+- If `docker compose` (the plugin) is missing, the plain **legacy builder works**
+  (`DOCKER_BUILDKIT=0 docker build --target server-runner --build-arg
+  GUARDIAN_SERVER_FEATURES= -t guardian-local .`) then `docker run -p 3000:3000
+  -p 50051:50051` with the three `/var/guardian/{storage,metadata,keystore}`
+  volumes + matching `GUARDIAN_*_PATH` envs (mirror `docker-compose.yml`).
+  Downside: the legacy builder doesn't skip the unused benchmark stage, so it
+  also compiles `guardian-prod-benchmarks` (another ~10 min) before the runtime
+  image — annoying but harmless.
+- Empty `GUARDIAN_SERVER_FEATURES` = filesystem backend (what compose uses).
+  The Dockerfile ARG *defaults to `postgres`*, so if you build without overriding
+  it you'll pull in the Postgres path — pass it empty for the simple local run.
+- Startup auto-generates the ACK keypair; `/pubkey` returns its commitment (this
+  is the value clients pin — see the security note below).
+- The running container / cloned source do **not** survive this environment's
+  scratch resets — if `curl localhost:3000/` stops answering, the Docker image
+  (`guardian-local`) is likely still cached, so just `docker run` it again
+  (re-clone + re-build only if the image is gone; the compile layer is cached so
+  it's fast). This is a **dev/testing** instance only, not anything durable.
 
 ## Honest caveats — do not paper over these
 
