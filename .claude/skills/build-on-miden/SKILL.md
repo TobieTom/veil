@@ -58,6 +58,48 @@ WASM-compiled web client.
   PSM repo) at `packages/miden-multisig-client`. npm package name + v0.15.0 unchanged.
 - (Optional, only if we need external ECDSA wallet support) `@getpara/react-sdk-lite`
 
+## MidenClient API surface — verified against installed types, 2026-07-04
+
+Confirmed by reading installed `@miden-sdk/miden-sdk@0.15.3` types AND by
+actually creating real private wallets against live devnet (unique account ids,
+persisted, advancing sync heights). Three corrections the SDK's own layout makes
+easy to get wrong — do not relearn these the hard way:
+
+1. **The authoritative type file is `dist/st/api-types.d.ts`** — not
+   `dist/st/index.d.ts` (which does NOT even declare `MidenClient`; it only
+   declares the `@internal` low-level `WebClient`) and not
+   `dist/st/crates/miden_client_web.d.ts` (the raw wasm-bindgen `WebClient`).
+   When checking whether a `MidenClient` method/field exists, read
+   `api-types.d.ts`. If a method is only in the crates `.d.ts`, it is a
+   low-level `WebClient` method and is probably NOT on the public client.
+
+2. **The API is resource-namespaced.** `MidenClient` exposes resource objects:
+   `.accounts`, `.transactions`, `.notes`, `.tags`, `.settings`, `.compile`,
+   `.keystore`, `.pswap`. Account creation is
+   **`client.accounts.create(opts?)` → `Promise<Account>`** (defaults to a
+   wallet), where
+   `opts = { storage?: "public" | "private", auth?: "falcon" | "ecdsa", seed? }`
+   — **string** values. Example (Miden accounts are private by default; Falcon
+   is the scheme Guardian ACKs use):
+   ```ts
+   const account = await client.accounts.create({ storage: "private", auth: "falcon" });
+   const id = account.id().toString();
+   ```
+
+3. **Do NOT use `client.newWallet(AccountStorageMode.private(), AuthScheme.AuthRpoFalcon512)`.**
+   That flat method is a low-level `WebClient` method from the crates `.d.ts`;
+   it is NOT on the public `MidenClient` type (`tsc` rejects it) and the enum
+   form is wrong for the resource API. Note `AuthScheme` is **overloaded**: a
+   crates enum (`AuthRpoFalcon512 = 2`) vs. an api-types const
+   (`AuthScheme.Falcon === "falcon"`). The resource API wants the string.
+
+Node vs browser backend: the SDK has a working Node/napi entry
+(`js/node-index.js`, native `.node` addon, SQLite-backed) that runs account
+creation headlessly — useful to prove the API + devnet connectivity without a
+browser. But it is a *different backend* than the browser-WASM client Veil
+ships (IndexedDB, JS sign callbacks). Node proves the API works; it does NOT
+prove the exact production browser path. Confirm the browser path separately.
+
 ## Private Multisig / PSM / Guardian — the foundation Veil is built on
 
 Vocabulary, precisely:

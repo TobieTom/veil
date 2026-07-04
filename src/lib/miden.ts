@@ -105,6 +105,59 @@ export async function checkMidenConnection(): Promise<MidenConnectionResult> {
 }
 
 /**
+ * Result of creating the local signer/treasury account.
+ */
+export type CreateAccountResult =
+  | { ok: true; accountId: string; syncHeight: number }
+  | { ok: false; error: string };
+
+/**
+ * Create a single private Miden wallet to act as "You" / the connected treasury
+ * signer for local testing. First step before the full multisig setup.
+ *
+ * Verified against installed @miden-sdk/miden-sdk@0.15.3 types — specifically
+ * dist/st/api-types.d.ts, which is the AUTHORITATIVE public surface (NOT the
+ * crates/*.d.ts low-level WebClient, and NOT memory):
+ *   client.accounts: AccountsResource
+ *   client.accounts.create(options?): Promise<Account>   // defaults to a wallet
+ *   WalletCreateOptions = { storage?: "public"|"private", auth?: "falcon"|"ecdsa", seed? }
+ *   account.id().toString() -> account id string
+ *
+ * Account creation is namespaced under the `.accounts` resource — the flat
+ * `newWallet(...)` seen in the low-level crates .d.ts is NOT on the public
+ * MidenClient type and is absent from the Node backend at runtime. Use the
+ * resource API. Storage "private" because Miden accounts are private by default;
+ * auth "falcon" (RPO-Falcon-512) is the scheme Guardian ACKs use.
+ *
+ * BROWSER-ONLY: runs the browser-WASM client. Must be called from a
+ * "use client" effect, never under Node/SSR.
+ */
+export async function createSignerAccount(): Promise<CreateAccountResult> {
+  let client: MidenClient | undefined;
+  try {
+    client = await createMidenClient();
+
+    // Prove devnet reachability before spending effort on account creation.
+    await client.sync();
+
+    const account = await client.accounts.create({
+      storage: "private",
+      auth: "falcon",
+    });
+
+    const syncHeight = await client.getSyncHeight();
+    return { ok: true, accountId: account.id().toString(), syncHeight };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  } finally {
+    client?.terminate();
+  }
+}
+
+/**
  * Result of a reachability probe against the Guardian (PSM) endpoint.
  */
 export type GuardianConnectionResult =
